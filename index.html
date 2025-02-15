@@ -37,6 +37,7 @@
             width: 320px;
             box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
         }
+        
         .panel h2 {
             margin-bottom: 10px;
             text-transform: uppercase;
@@ -259,6 +260,10 @@
             if (e.key === "ArrowLeft") newX--;
             if (e.key === "ArrowRight") newX++;
             
+            if (e.key === "w" || e.key === "W") newY--;
+            if (e.key === "s" || e.key === "S") newY++;
+            if (e.key === "a" || e.key === "A") newX--;
+            if (e.key === "d" || e.key === "D") newX++;
     
             const enemy = activeEnemies.find(enemy => enemy.x === newX && enemy.y === newY);
             if (enemy) {
