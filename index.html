@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPG Játék</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #121212;
+            color: white;
+            font-family: 'Arial', sans-serif;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+        canvas {
+            background: #2b2b2b;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+        }
+        .panel {
+            background: rgba(30, 30, 30, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            width: 320px;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+        }
+        .panel h2 {
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        .stats, .enemy-stats {
+            margin-top: 10px;
+        }
+        .button-container {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 12px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .attack { background: #ff4d4d; color: white; }
+        .defend { background: #4d94ff; color: white; }
+        .run { background: #ffd633; color: black; }
+        button:hover { transform: scale(1.05); }
+        .game-over, .game-win {
+            display: none;
+            font-size: 24px;
+            color: red;
+            margin-top: 20px;
+        }
+        
+    </style>
+</head>
+<body>
+    <div class="container">
+        <canvas id="gameCanvas" width="800" height="800"></canvas>
+        <div class="panel">
+            <h2>Játék Leírása</h2>
+            <p>Ork: 25HP, 20sebzés, lime színű. <br>
+            Gnóm: 10HP, 5sebzés, zöld színű<br>
+            Mágus: 20HP, 15sebzés, lina színű<br><br>
+            Kulcs: Sárga színű <br>
+            Játékos: Piros színű<br>
+            Kijárat: Fekete színű<br>
+            Láda: Erő növelőt vagy HP növelőt tartalmaz, barna színű
+            </p>
+            <div class="stats" id="stats"></div>
+            <div class="enemy-stats" id="enemyStats"></div>
+            <div class="button-container" id="combatControls" style="display: none;">
+                <button class="attack" onclick="attack()">Támad</button>
+                <button class="defend" onclick="defend()">Blokkol</button>
+                <button class="run" onclick="runAway()">Elfut</button>
+            </div>
+            <div class="game-over" id="gameOver">Game Over! <button onclick="restartGame()">Újra</button></div>
+            <div class="game-win" id="gameWin">Gratulálok, sikerült! <button onclick="restartGame()">Újra</button></div>
+        </div>
+    </div>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const restartButton = document.getElementById("restartButton");
+        const combatControls = document.getElementById("combatControls");
+        const statsDiv = document.getElementById("stats");
+        const enemyStatsDiv = document.getElementById("enemyStats");
+        const gameOverDiv = document.getElementById("gameOver");
+        const gameWinDiv = document.getElementById("gameWin");
+        
+        const tileSize = 40;
+        const cols = canvas.width / tileSize;
+        const rows = canvas.height / tileSize;
+        
+        const player = { x: 1, y: 1, hp: 20, damage: 5, defense: 10, keys: [] };
+        let currentLevel = 1;
+        const maxLevels = 5;
+        let moveCooldown = false;
+        let gameCompleted = false;
+        let currentEnemy = null;
+        let escaped = false; 
+        let inCombat = false;
+        const enemies = [
+            { type: "Gnóm", hp: 10, damage: 5, dodge: 0, color: "green" },
+            { type: "Ork", hp: 25, damage: 10, dodge: 0.05, color: "lime" },
+            { type: "Mágus", hp: 20, damage: 15, dodge: 0.12, color: "purple" }
+        ];
+        let activeEnemies = [];
+        let chests = []; 
+        
+        function generateMap() {
+            const map = Array.from({ length: rows }, () => Array(cols).fill(0));
+            for (let y = 1; y < rows - 1; y++) {
+                for (let x = 1; x < cols - 1; x++) {
+                    if (Math.random() < 0.2) {
+                        map[y][x] = 1;
+                    }
+                }
+            }
+            map[player.y][player.x] = 0; 
+            
+            let exitX, exitY;
+            do {
+                exitX = Math.floor(Math.random() * (cols - 2)) + 1;
+                exitY = Math.floor(Math.random() * (rows - 2)) + 1;
+            } while (map[exitY][exitX] !== 0);
+            map[exitY][exitX] = 2; 
+            
+            let keyX, keyY;
+            do {
+                keyX = Math.floor(Math.random() * (cols - 2)) + 1;
+                keyY = Math.floor(Math.random() * (rows - 2)) + 1;
+            } while (map[keyY][keyX] !== 0);
+            map[keyY][keyX] = 3; 
+            
+            chests = [];
+            for (let i = 0; i < 3; i++) {
+                let chestX, chestY;
+                do {
+                    chestX = Math.floor(Math.random() * (cols - 2)) + 1;
+                    chestY = Math.floor(Math.random() * (rows - 2)) + 1;
+                } while (map[chestY][chestX] !== 0);
+                
+                const lootType = Math.random() < 0.5 ? 'hp' : 'damage'; 
+                const lootAmount = Math.floor(Math.random() * 3) + 1; 
+                chests.push({ x: chestX, y: chestY, lootType, lootAmount });
+                map[chestY][chestX] = 4; 
+            }
+            
+            activeEnemies = [];
+            for (let i = 0; i < 3; i++) {
+                let enemyX, enemyY;
+                do {
+                    enemyX = Math.floor(Math.random() * (cols - 2)) + 1;
+                    enemyY = Math.floor(Math.random() * (rows - 2)) + 1;
+                } while (map[enemyY][enemyX] !== 0);
+                
+                activeEnemies.push({
+                    ...enemies[i],
+                    x: enemyX,
+                    y: enemyY
+                });
+            }
+            
+            return map;
+        }
+        
+        let map = generateMap();
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    if (map[y][x] === 1) {
+                        ctx.fillStyle = "gray"; 
+                        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                    } else if (map[y][x] === 2) {
+                        ctx.fillStyle = "black"; 
+                        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                    } else if (map[y][x] === 3) {
+                        ctx.fillStyle = "yellow"; 
+                        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                    } else if (map[y][x] === 4) {
+                        ctx.fillStyle = "brown"; 
+                        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                    }
+                }
+            }
+            ctx.fillStyle = "red"; 
+            ctx.fillRect(player.x * tileSize, player.y * tileSize, tileSize, tileSize);
+         
+            activeEnemies.forEach(enemy => {
+                ctx.fillStyle = enemy.color; 
+                ctx.fillRect(enemy.x * tileSize, enemy.y * tileSize, tileSize, tileSize);
+            });
+
+         
+            statsDiv.innerHTML = `HP: ${player.hp} | Védelem: ${player.defense} | Sebzés: ${player.damage} | Kulcsok: ${player.keys.length}`;
+          
+            if (currentEnemy) {
+                enemyStatsDiv.innerHTML = `${currentEnemy.type} HP: ${currentEnemy.hp}`;
+            } else {
+                enemyStatsDiv.innerHTML = '';
+            }
+        }
+
+        function moveEnemies() {
+            activeEnemies.forEach(enemy => {
+                if (enemy !== currentEnemy) { 
+                    const direction = Math.floor(Math.random() * 4); 
+                    let newX = enemy.x;
+                    let newY = enemy.y;
+
+                    if (direction === 0) newY--; 
+                    else if (direction === 1) newY++; 
+                    else if (direction === 3) newX--; 
+                    else if (direction === 5) newX++; 
+
+                    if (map[newY] && map[newY][newX] === 0 && !activeEnemies.some(e => e.x === newX && e.y === newY)) {
+                        enemy.x = newX;
+                        enemy.y = newY;
+                    }
+                }
+            });
+            draw();
+        }
+
+        setInterval(() => {
+            if (!gameCompleted && !currentEnemy) {
+                moveEnemies();
+            }
+        }, 3000); 
+
+        document.addEventListener("keydown", (e) => {
+            if (gameCompleted || moveCooldown || inCombat) return;
+            moveCooldown = true;
+            setTimeout(() => moveCooldown = false, 100);
+            
+            let newX = player.x;
+            let newY = player.y;
+            if (e.key === "ArrowUp") newY--;
+            if (e.key === "ArrowDown") newY++;
+            if (e.key === "ArrowLeft") newX--;
+            if (e.key === "ArrowRight") newX++;
+            
+    
+            const enemy = activeEnemies.find(enemy => enemy.x === newX && enemy.y === newY);
+            if (enemy) {
+                currentEnemy = enemy;
+                inCombat = true; 
+                combatControls.style.display = "block";
+                draw(); 
+                return;
+            }
+
+
+            if (map[newY] && map[newY][newX] === 3) {
+                player.keys.push(true); 
+                map[newY][newX] = 0; 
+            }
+
+
+            if (map[newY] && map[newY][newX] === 4) {
+                const chest = chests.find(chest => chest.x === newX && chest.y === newY);
+                if (chest) {
+                    if (chest.lootType === 'hp') {
+                        player.hp += chest.lootAmount;
+                        alert(`Feltörtél egy ládát! ${chest.lootAmount} HP-t nyertél!`);
+                    } else if (chest.lootType === 'damage') {
+                        player.damage += chest.lootAmount; 
+                        alert(`Feltörtél egy ládát! ${chest.lootAmount} sebzést nyertél!`);
+                    }
+                    chests = chests.filter(c => c !== chest); 
+                    map[newY][newX] = 0; 
+                }
+            }
+
+            if (map[newY] && map[newY][newX] === 2) {
+                if (player.keys.length > 0) {
+                    player.keys.pop(); 
+                    alert("Gratulálok! Átjutottál a következő pályára!");
+                    currentLevel++;
+                    if (currentLevel > maxLevels) {
+                        gameCompleted = true;
+                        gameWinDiv.style.display = "block"; 
+                    } else {
+                        map = generateMap();
+                    }
+                } else {
+                    alert("Nincs kulcsod a kijárathoz!");
+                }
+            } else if (map[newY] && map[newY][newX] === 0) {
+                player.x = newX;
+                player.y = newY;
+            }
+            draw();
+ });
+        
+ function attack() {
+    if (!currentEnemy) return;
+    const hitChance = Math.random();
+    if (hitChance > currentEnemy.dodge) {
+        currentEnemy.hp -= player.damage;
+        if (currentEnemy.hp <= 0) {
+            alert(`Megölted a ${currentEnemy.type}-t!`);
+            activeEnemies = activeEnemies.filter(enemy => enemy !== currentEnemy);
+            currentEnemy = null;
+            inCombat = false;
+            combatControls.style.display = "none";
+        }
+    } else {
+        alert(`${currentEnemy.type} kitért a támadásod elől!`);
+    }
+    
+    retaliate(); 
+    draw();
+}
+
+function retaliate() {
+    if (escaped || !currentEnemy) return;  
+    const damageTaken = Math.max(0, currentEnemy.damage - player.defense);
+    player.hp -= damageTaken;
+    if (player.hp <= 0) {
+        alert("Game Over! A karaktered meghalt.");
+        gameCompleted = true;
+        gameOverDiv.style.display = "block";
+    }
+    draw();
+}
+
+        function retaliate() {
+    if (escaped) return;
+    if (currentEnemy) { 
+        activeEnemies.forEach(enemy => {
+            const damageTaken = Math.max(0, enemy.damage - player.defense);
+            player.hp -= damageTaken;
+            if (player.hp <= 0) {
+                alert("Game Over ! A karaktered meghalt.");
+                gameCompleted = true;
+                gameOverDiv.style.display = "block";
+            }
+        });
+    }
+    draw();
+}
+
+        function defend() {
+            if (!currentEnemy) return;
+            const damageTaken = Math.max(0, currentEnemy.damage - player.defense);
+            player.hp -= damageTaken;
+            if (player.hp <= 0) {
+                alert("Game Over! A karaktered meghalt.");
+                gameCompleted = true;
+                gameOverDiv.style.display = "block";
+            }
+            draw();
+        }
+
+        function runAway() {
+            if (!currentEnemy) return;
+            const escapeChance = Math.random();
+            if (escapeChance < 0.5) {
+                alert("Sikeresen elmenekültél!");
+                escaped = true; 
+                currentEnemy = null;
+                inCombat = false; 
+                combatControls.style.display = "none";
+            } else {
+                alert("Nem sikerült elmenekülnöd!");
+                retaliate(); 
+            }
+            draw();
+        }
+        
+        function restartGame() {
+            location.reload();
+        }
+
+      
+        function checkEnemyCollision() {
+            activeEnemies.forEach(enemy => {
+                if (enemy.x === player.x && enemy.y === player.y) {
+                    currentEnemy = enemy;
+                    inCombat = true; 
+                    combatControls.style.display = "block";
+                    draw(); 
+                }
+            });
+        }
+
+        setInterval(() => {
+            if (!gameCompleted) {
+                moveEnemies();
+                checkEnemyCollision(); 
+            }
+        }, 1000); 
+
+        draw();
+    </script>
+</body>
+</html>
