@@ -198,7 +198,7 @@
                         ctx.fillStyle = "yellow"; 
                         ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
                     } else if (map[y][x] === 4) {
-                        ctx.fillStyle = "brown"; 
+                        ctx.fillStyle = "Chocolate"; 
                         ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
                     }
                 }
@@ -259,7 +259,7 @@
             if (e.key === "ArrowDown") newY++;
             if (e.key === "ArrowLeft") newX--;
             if (e.key === "ArrowRight") newX++;
-            
+
             if (e.key === "w" || e.key === "W") newY--;
             if (e.key === "s" || e.key === "S") newY++;
             if (e.key === "a" || e.key === "A") newX--;
@@ -333,10 +333,22 @@
         alert(`${currentEnemy.type} kitért a támadásod elől!`);
     }
     
+
     retaliate(); 
     draw();
 }
 
+function retaliate() {
+    if (escaped || !currentEnemy) return;  
+    const damageTaken = Math.max(0, currentEnemy.damage - player.defense);
+    player.hp -= damageTaken;
+    if (player.hp <= 0) {
+        alert("Game Over! A karaktered meghalt.");
+        gameCompleted = true;
+        gameOverDiv.style.display = "block";
+    }
+    draw();
+}
 function retaliate() {
     if (escaped || !currentEnemy) return;  
     const damageTaken = Math.max(0, currentEnemy.damage - player.defense);
